@@ -118,12 +118,71 @@ This script takes query images and uses the pre-computed intrinsics and `R_align
     ```
 3.  **Output:** An Excel file with the results will be saved.
 
+## AWS Integration Module
+
+The `monitoring/aws_integration.py` module provides AWS infrastructure for calibration monitoring, including:
+
+### Features
+
+-   **Athena Table Schema**: Iceberg table for storing calibration results with columns for offsets, capture positions, file locations, and success/failure tracking
+-   **S3 Utilities**: Upload/download functions for structured storage of images and features:
+    -   Reference scans: `s3://camera-calibration-monitoring/{deployment}/{camera}/reference_scan/{images|features}/`
+    -   Query scans: `s3://camera-calibration-monitoring/{deployment}/{camera}/query_scan/{timestamp}/{images|features}/`
+-   **Athena Operations**: Write calibration results and query historical data
+
+### Usage Example
+
+```python
+from monitoring.aws_integration import AWSIntegration, upload_reference_scan
+
+# Initialize AWS integration
+aws = AWSIntegration(region_name="us-east-1")
+
+# Create the Athena table (one-time setup)
+aws.create_table()
+
+# Upload a reference scan
+image_uris, feature_uris = upload_reference_scan(
+    aws,
+    deployment_name="deployment-1",
+    camera_name="camera-01",
+    images_dir="/path/to/images",
+    features_dir="/path/to/features"
+)
+
+# Write calibration results
+aws.write_calibration_result(
+    deployment_name="deployment-1",
+    device_id="camera-01",
+    timestamp=datetime.now(),
+    pitch_offset=0.5,
+    yaw_offset=-0.3,
+    roll_offset=0.1,
+    mode="passive",
+    capture_positions=[{"pan": 0.0, "tilt": 0.0, "zoom": 1.0}],
+    files_location="s3://bucket/path/",
+    success=True
+)
+
+# Query results
+results = aws.query_calibration_results(
+    deployment_name="deployment-1",
+    device_id="camera-01",
+    success_only=True
+)
+```
+
+See `monitoring/example_usage.py` for more detailed examples.
+
 ## Project Structure
 
 ```
 ptz_self_georegistration/
 ├── configs/                  # Configuration files for all executables.
 ├── ptz_georeg/               # The core Python library with all utility functions.
+├── monitoring/               # AWS integration module for calibration monitoring.
+│   ├── aws_integration.py    # Main AWS integration module (S3, Athena).
+│   └── example_usage.py      # Usage examples for the AWS integration.
 ├── scripts/                  # Executable scripts for the main workflow.
 ├── requirements.txt          # List of Python package dependencies.
 ├── setup.py                  # Makes the `ptz_georeg` folder installable.
