@@ -370,6 +370,110 @@ results = aws.query_calibration_results(
 
 See `monitoring/aws_integration.py` and `monitoring/slack_notifier.py` for more detailed examples.
 
+## Main Orchestration Script
+
+The `scripts/run_calibration_monitoring.py` script provides a complete, automated orchestration of the entire calibration monitoring pipeline. It combines all monitoring components into a single executable workflow.
+
+### What It Does
+
+The orchestration script:
+
+1. **Loads device configurations** from `devices.yaml`
+2. **For each device:**
+   - Switches kubectl context to the device's cluster
+   - Extracts query frames using `query_extractor`
+   - Runs calibration algorithm via `calibration_runner`
+   - Writes results to Athena table
+   - Uploads query files to S3 at `query_scan/{timestamp}/`
+   - Sends Slack notification with results
+3. **Handles failures gracefully:**
+   - Logs failures to Athena with detailed error messages
+   - Sends Slack alerts with error details
+   - Continues processing remaining devices
+
+### Usage
+
+**Basic usage** - Process all devices from `devices.yaml`:
+
+```bash
+python scripts/run_calibration_monitoring.py
+```
+
+**Process a single device:**
+
+```bash
+python scripts/run_calibration_monitoring.py --device gan-shomron-dell/onvifcam-1
+```
+
+**Custom configuration paths:**
+
+```bash
+python scripts/run_calibration_monitoring.py \
+  --devices-yaml custom_devices.yaml \
+  --camera-intrinsics camera_intrinsics/calibration.npz \
+  --r-align r_align/10NOV2025_REF1_HOMOGRAPHY.npy \
+  --s3-bucket my-custom-bucket \
+  --aws-region us-west-2
+```
+
+**Adjust stability and timeout settings:**
+
+```bash
+python scripts/run_calibration_monitoring.py \
+  --stabilize-time 60 \
+  --timeout 300
+```
+
+### Command-Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--devices-yaml` | Path to devices.yaml configuration | `devices.yaml` |
+| `--camera-intrinsics` | Path to camera calibration .npz file | `camera_intrinsics/calibration.npz` |
+| `--r-align` | Path to R_align .npy file | `r_align/10NOV2025_REF1_HOMOGRAPHY.npy` |
+| `--s3-bucket` | S3 bucket name for data storage | `camera-calibration-monitoring` |
+| `--aws-region` | AWS region | `us-east-1` |
+| `--stabilize-time` | Seconds of stability required (passive mode) | `30` |
+| `--timeout` | Optional timeout for query extraction (seconds) | `None` |
+| `--device` | Process only specific device (format: `deployment/device_id`) | Process all |
+
+### devices.yaml Format
+
+The script expects a YAML file with the following structure:
+
+```yaml
+- name: "gan-shomron-dell"
+  cameras:
+    - name: "onvifcam-1"
+- name: "dev-server"
+  cameras:
+    - name: "onvifcam-dev-2"
+```
+
+### Exit Codes
+
+- **0**: All devices processed successfully
+- **1**: One or more devices failed (failures are logged to Athena and Slack)
+
+### Scheduling with Cron
+
+To run the monitoring hourly, add to your crontab:
+
+```bash
+# Run calibration monitoring every hour
+0 * * * * cd /path/to/ptz-calibration-monitoring && /path/to/python scripts/run_calibration_monitoring.py >> /var/log/calibration_monitoring.log 2>&1
+```
+
+### Testing
+
+Run the test suite to verify the orchestrator:
+
+```bash
+python scripts/test_orchestration.py
+```
+
+This runs unit tests with mocked components to verify the orchestration logic without requiring actual hardware or AWS credentials.
+
 ## Project Structure
 
 ```
@@ -390,6 +494,8 @@ ptz-calibration-monitoring/
 │   └── SLACK_SETUP.md       # Slack setup guide.
 ├── ptz_georeg/               # The core Python library with all utility functions.
 ├── scripts/                  # Executable scripts for the main workflow.
+│   ├── run_calibration_monitoring.py  # Main orchestration script
+│   ├── test_orchestration.py  # Test script for orchestration
 │   ├── calibrate_R_align.py
 │   ├── calculateOrientationOffsets.py
 │   ├── camera_calibration.py
