@@ -118,13 +118,80 @@ This script takes query images and uses the pre-computed intrinsics and `R_align
     ```
 3.  **Output:** An Excel file with the results will be saved.
 
+## Calibration Monitoring
+
+This project includes a calibration monitoring system for PTZ cameras deployed across multiple clusters.
+
+### Reference Collection
+
+The reference collection module (`monitoring/reference_collector.py`) automates the process of capturing reference scans from PTZ cameras and uploading them to S3 for ongoing calibration monitoring.
+
+**Key Features:**
+- Iterates through cameras defined in `devices.yaml`
+- Automatically switches kubectl contexts for different clusters
+- Captures PTZ grid scans using logic from `scan.py`
+- Extracts DISK features using COLMAP format
+- Uploads images and features to S3
+
+**Usage:**
+
+1. **Configure Devices:** Edit `devices.yaml` to define your cameras and clusters:
+   ```yaml
+   - name: "deployment-name"
+     cameras:
+       - name: "onvifcam-1"
+   ```
+
+2. **Collect All References:**
+   ```bash
+   python scripts/collect_references.py
+   ```
+
+3. **Collect for Specific Device:**
+   ```bash
+   python scripts/collect_references.py --device gan-shomron-dell
+   ```
+
+4. **Collect for Specific Camera:**
+   ```bash
+   python scripts/collect_references.py --device gan-shomron-dell --camera onvifcam-1
+   ```
+
+5. **Custom Grid Size:**
+   ```bash
+   python scripts/collect_references.py --horizontal-stops 16 --vertical-stops 6
+   ```
+
+**S3 Storage Structure:**
+```
+s3://camera-calibration-monitoring/
+└── {deployment-name}/
+    └── {camera-name}/
+        └── reference_scan/
+            ├── images/          # Captured frame images
+            ├── features/        # COLMAP format feature files
+            └── manifest.json    # Frame metadata and telemetry
+```
+
+**Prerequisites:**
+- AWS credentials configured (via `~/.aws/credentials` or environment variables)
+- kubectl configured with contexts for each cluster
+- `secrets.json` file with camera connection details (optional)
+
 ## Project Structure
 
 ```
 ptz_self_georegistration/
 ├── configs/                  # Configuration files for all executables.
+├── monitoring/               # Calibration monitoring module.
+│   ├── __init__.py
+│   └── reference_collector.py
 ├── ptz_georeg/               # The core Python library with all utility functions.
 ├── scripts/                  # Executable scripts for the main workflow.
+│   ├── calibrate_R_align.py
+│   ├── calculateOrientationOffsets.py
+│   ├── camera_calibration.py
+│   └── collect_references.py  # NEW: Reference collection script
 ├── requirements.txt          # List of Python package dependencies.
 ├── setup.py                  # Makes the `ptz_georeg` folder installable.
 └── README.md                 # This file.
