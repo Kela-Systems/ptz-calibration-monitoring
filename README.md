@@ -178,20 +178,154 @@ s3://camera-calibration-monitoring/
 - kubectl configured with contexts for each cluster
 - `secrets.json` file with camera connection details (optional)
 
+## Monitoring and Notifications
+
+### Slack Notifications
+
+The project includes a Slack notification module for alerting on calibration status and offset thresholds.
+
+**Setup (OAuth Token - Recommended):**
+
+1. Create a Slack App and get an OAuth token:
+   - Go to https://api.slack.com/apps
+   - Create a new app or select an existing one
+   - Navigate to "OAuth & Permissions"
+   - Add the `chat:write` scope
+   - Install the app to your workspace
+   - Copy the "Bot User OAuth Token"
+
+2. Set the access token as an environment variable:
+   ```bash
+   export SLACK_ACCESS_TOKEN="xoxb-your-token-here"
+   export SLACK_CHANNEL="calibration-monitoring"  # Optional, defaults to "calibration-monitoring"
+   ```
+
+**Alternative Setup (Webhook URL):**
+
+If you prefer using webhooks instead of OAuth tokens:
+
+1. Create a webhook URL:
+   - Go to https://api.slack.com/messaging/webhooks
+   - Create a webhook for your `#calibration-monitoring` channel
+
+2. Set the webhook URL:
+   ```bash
+   export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+   ```
+
+**Usage:**
+
+```python
+from monitoring import SlackNotifier
+
+# Initialize the notifier (auto-detects SLACK_ACCESS_TOKEN or SLACK_WEBHOOK_URL)
+notifier = SlackNotifier()
+
+# Send a calibration report
+notifier.send_calibration_report(
+    deployment="gan-shomron-dell",
+    device_id="onvifcam-1",
+    pitch=0.2,      # Pitch offset in degrees
+    yaw=0.3,        # Yaw offset in degrees
+    roll=0.1,       # Roll offset in degrees
+    mode="passive", # or "active"
+    success=True,   # Whether calibration succeeded
+    failure_logs=["Optional error messages"]  # Include if success=False
+)
+```
+
+**Alert Thresholds:**
+
+- 🚨 Alert emoji is shown if ANY offset exceeds 0.5°
+- ✅ Success emoji is shown if all offsets are ≤ 0.5°
+
+**Message Format:**
+
+```
+[✅/🚨] Camera Calibration Report
+Deployment: gan-shomron-dell
+Device: onvifcam-1
+Timestamp: 2025-11-15T21:00:00Z
+Offsets: Pitch=0.2°, Yaw=0.3°, Roll=0.1°
+Mode: passive
+Success: Yes
+```
+
+### AWS Integration Module
+
+The `monitoring/aws_integration.py` module provides AWS infrastructure for calibration monitoring, including:
+
+**Features:**
+
+-   **Athena Table Schema**: Iceberg table for storing calibration results with columns for offsets, capture positions, file locations, and success/failure tracking
+-   **S3 Utilities**: Upload/download functions for structured storage of images and features:
+    -   Reference scans: `s3://camera-calibration-monitoring/{deployment}/{camera}/reference_scan/{images|features}/`
+    -   Query scans: `s3://camera-calibration-monitoring/{deployment}/{camera}/query_scan/{timestamp}/{images|features}/`
+-   **Athena Operations**: Write calibration results and query historical data
+
+**Usage Example:**
+
+```python
+from monitoring.aws_integration import AWSIntegration, upload_reference_scan
+
+# Initialize AWS integration
+aws = AWSIntegration(region_name="us-east-1")
+
+# Create the Athena table (one-time setup)
+aws.create_table()
+
+# Upload a reference scan
+image_uris, feature_uris = upload_reference_scan(
+    aws,
+    deployment_name="deployment-1",
+    camera_name="camera-01",
+    images_dir="/path/to/images",
+    features_dir="/path/to/features"
+)
+
+# Write calibration results
+aws.write_calibration_result(
+    deployment_name="deployment-1",
+    device_id="camera-01",
+    timestamp=datetime.now(),
+    pitch_offset=0.5,
+    yaw_offset=-0.3,
+    roll_offset=0.1,
+    mode="passive",
+    capture_positions=[{"pan": 0.0, "tilt": 0.0, "zoom": 1.0}],
+    files_location="s3://bucket/path/",
+    success=True
+)
+
+# Query results
+results = aws.query_calibration_results(
+    deployment_name="deployment-1",
+    device_id="camera-01",
+    success_only=True
+)
+```
+
+See `monitoring/aws_integration.py` and `monitoring/slack_notifier.py` for more detailed examples.
+
 ## Project Structure
 
 ```
 ptz_self_georegistration/
 ├── configs/                  # Configuration files for all executables.
-├── monitoring/               # Calibration monitoring module.
+├── monitoring/               # Monitoring and notification modules.
 │   ├── __init__.py
-│   └── reference_collector.py
+│   ├── reference_collector.py  # Reference collection module
+│   ├── slack_notifier.py    # Slack integration for calibration alerts.
+│   ├── aws_integration.py   # AWS integration module (S3, Athena).
+│   ├── example_usage.py     # Usage examples.
+│   ├── README.md            # Monitoring module documentation.
+│   └── SLACK_SETUP.md       # Slack setup guide.
 ├── ptz_georeg/               # The core Python library with all utility functions.
 ├── scripts/                  # Executable scripts for the main workflow.
 │   ├── calibrate_R_align.py
 │   ├── calculateOrientationOffsets.py
 │   ├── camera_calibration.py
-│   └── collect_references.py  # NEW: Reference collection script
+│   └── collect_references.py  # Reference collection script
 ├── requirements.txt          # List of Python package dependencies.
 ├── setup.py                  # Makes the `ptz_georeg` folder installable.
 └── README.md                 # This file.
