@@ -31,16 +31,8 @@ from botocore.exceptions import ClientError
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    from port_forward_utils import start_port_forwards, stop_port_forwards
-except ImportError:
-    # Fallback if port_forward_utils is not available as a package
-    # This will be needed if the helpers aren't set up yet
-    logging.warning("Could not import port_forward_utils, port forwarding functions may not be available")
-    def start_port_forwards(*args, **kwargs):
-        logging.warning("start_port_forwards not implemented")
-    def stop_port_forwards(*args, **kwargs):
-        logging.warning("stop_port_forwards not implemented")
+# Import port forwarding utilities
+from port_forward_utils import start_port_forwards, stop_port_forwards
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
