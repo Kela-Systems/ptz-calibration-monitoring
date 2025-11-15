@@ -118,14 +118,89 @@ This script takes query images and uses the pre-computed intrinsics and `R_align
     ```
 3.  **Output:** An Excel file with the results will be saved.
 
+## Monitoring Module
+
+The monitoring module provides functionality for PTZ camera calibration monitoring and query extraction.
+
+### Query Extraction
+
+The `monitoring.query_extractor` module provides an `extract_query()` function to capture camera frames with synchronized telemetry data. It supports two modes:
+
+**Passive Mode** (default): Waits for the camera to be stable (no movement) for a specified duration, then captures a single frame.
+
+**Active Mode**: Commands the camera to specific PTZ positions and captures frames at each position.
+
+#### Usage Example
+
+```python
+from monitoring.query_extractor import extract_query
+
+# Passive mode - wait for camera to be stable for 30 seconds
+result = extract_query(
+    device_id="onvifcam-dev-1",
+    stabilize_time=30,
+    timeout=300  # 5 minute timeout
+)
+
+# Active mode - command camera to specific positions
+ptz_stops = [
+    (0, 0, 0.0),      # pan, tilt, zoom
+    (45, -10, 0.5),
+    (90, 10, 0.0)
+]
+result = extract_query(
+    device_id="onvifcam-dev-1",
+    active_ptz_stops=ptz_stops
+)
+
+# Access results
+frames = result['camera_frames']  # List of PIL Images
+telemetry = result['telemetry']   # Telemetry data for each frame
+positions = result['capture_positions']  # Actual capture positions
+temp_dir = result['temp_dir']     # Directory with saved frames
+```
+
+#### Function Signature
+
+```python
+extract_query(
+    device_id: str,
+    stabilize_time: int = 30,
+    timeout: Optional[int] = None,
+    active_ptz_stops: List[Tuple[float, float, float]] = None
+) -> Dict
+```
+
+**Parameters:**
+- `device_id`: Camera device identifier (e.g., "onvifcam-dev-1")
+- `stabilize_time`: Seconds of stability required before capture (default: 30)
+- `timeout`: Optional timeout in seconds for waiting for stability (None = no timeout)
+- `active_ptz_stops`: Optional list of (pan, tilt, zoom) tuples for active mode
+
+**Returns:**
+Dictionary containing:
+- `camera_frames`: List of captured PIL Images
+- `telemetry`: Dictionary mapping frame index to telemetry data
+- `capture_positions`: List of (pan, tilt, zoom) positions where frames were captured
+- `temp_dir`: Path to temporary directory containing saved frames
+- `manifest_path`: Path to telemetry manifest JSON file
+
 ## Project Structure
 
 ```
-ptz_self_georegistration/
+ptz-calibration-monitoring/
 ├── configs/                  # Configuration files for all executables.
-├── ptz_georeg/               # The core Python library with all utility functions.
-├── scripts/                  # Executable scripts for the main workflow.
-├── requirements.txt          # List of Python package dependencies.
-├── setup.py                  # Makes the `ptz_georeg` folder installable.
-└── README.md                 # This file.
+├── helpers/                  # Helper modules for camera control and MQTT.
+│   ├── camera_control.py    # ONVIF camera control utilities.
+│   ├── mqtt_helper.py       # MQTT telemetry monitoring (TelemetryLatch).
+│   └── rtsp_helper.py       # RTSP stream capture utilities.
+├── monitoring/              # Calibration monitoring modules.
+│   └── query_extractor.py   # Query extraction with MQTT stability detection.
+├── ptz_georeg/              # The core Python library with all utility functions.
+├── scripts/                 # Executable scripts for the main workflow.
+├── port_forward_utils.py    # Kubernetes port forwarding utilities.
+├── requirements.txt         # List of Python package dependencies.
+├── scan.py                  # Grid-based frame capture script.
+├── setup.py                 # Makes the `ptz_georeg` folder installable.
+└── README.md                # This file.
 ```
