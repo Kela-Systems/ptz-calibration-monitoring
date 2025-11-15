@@ -87,27 +87,14 @@ class AWSIntegration:
             yaw_offset DOUBLE,
             roll_offset DOUBLE,
             mode STRING,
-            capture_positions ARRAY<STRUCT<
-                pan: DOUBLE,
-                tilt: DOUBLE,
-                zoom: DOUBLE
-            >>,
+            capture_positions ARRAY<STRUCT<pan: DOUBLE, tilt: DOUBLE, zoom: DOUBLE>>,
             files_location STRING,
             success BOOLEAN,
             failure_log STRING
         )
-        PARTITIONED BY (
-            deployment_name,
-            device_id,
-            year INT,
-            month INT,
-            day INT
-        )
         LOCATION 's3://{S3_BUCKET_NAME}/iceberg-data/'
         TBLPROPERTIES (
-            'table_type' = 'ICEBERG',
-            'format' = 'parquet',
-            'write_compression' = 'snappy'
+            'table_type' = 'ICEBERG'
         )
         """
     
