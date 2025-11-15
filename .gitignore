@@ -1,0 +1,26 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# IDE and OS files
+.idea/
+.vscode/
+*.DS_Store
+
+# Environment files
+.env
+
+# Project-specific output folders
+logs_and_results/
+excels/
+query_images_temp/
+reference_images_temp/
+matching_figures/
+transformed_figures/
+data/

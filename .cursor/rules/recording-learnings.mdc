@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+# How to record important information for later use
+
+As you make changes, you will log your changes, learnings and issues to md files in /changelog. When I command you with /update-learnings or /prune-learnings, we will update important information in @rules/important-learnings.mdc. DO NOT log your learnings elsewhere.

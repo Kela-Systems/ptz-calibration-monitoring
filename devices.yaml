@@ -1,0 +1,6 @@
+- name: "gan-shomron-dell"
+  cameras:
+    - name: "onvifcam-1"
+- name: "dev-server"
+  cameras:
+    - name: "onvifcam-dev-2"as

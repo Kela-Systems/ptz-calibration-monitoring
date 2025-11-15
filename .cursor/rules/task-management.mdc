@@ -1,0 +1,19 @@
+---
+alwaysApply: true
+---
+
+# Code Workspace Rules
+
+## Worktree instructions
+
+I often prefer to work in git worktrees, to allow to me to run multiple tasks & agents in parrallel.
+
+### Staying on a worktree
+
+**Hold it in conversational context:** Once we start working on a particular worktree in a particular conversation, remember that you are on that worktree for the duration of the conversation. If you summarize the conversation, make sure to keep the worktree in your context so that you can stay on it.
+
+**Detect which worktree we are on:** If I start a conversation and have a file from a particular worktree in the conversation context, then work on that worktree!.
+
+## Documentation
+
+As you update the code, please keep README documents up to date.
