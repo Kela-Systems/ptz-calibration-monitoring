@@ -178,6 +178,69 @@ s3://camera-calibration-monitoring/
 - kubectl configured with contexts for each cluster
 - `secrets.json` file with camera connection details (optional)
 
+### Query Extraction
+
+The `monitoring.query_extractor` module provides an `extract_query()` function to capture camera frames with synchronized telemetry data. It supports two modes:
+
+**Passive Mode** (default): Waits for the camera to be stable (no movement) for a specified duration, then captures a single frame.
+
+**Active Mode**: Commands the camera to specific PTZ positions and captures frames at each position.
+
+#### Usage Example
+
+```python
+from monitoring.query_extractor import extract_query
+
+# Passive mode - wait for camera to be stable for 30 seconds
+result = extract_query(
+    device_id="onvifcam-dev-1",
+    stabilize_time=30,
+    timeout=300  # 5 minute timeout
+)
+
+# Active mode - command camera to specific positions
+ptz_stops = [
+    (0, 0, 0.0),      # pan, tilt, zoom
+    (45, -10, 0.5),
+    (90, 10, 0.0)
+]
+result = extract_query(
+    device_id="onvifcam-dev-1",
+    active_ptz_stops=ptz_stops
+)
+
+# Access results
+frames = result['camera_frames']  # List of PIL Images
+telemetry = result['telemetry']   # Telemetry data for each frame
+positions = result['capture_positions']  # Actual capture positions
+temp_dir = result['temp_dir']     # Directory with saved frames
+```
+
+#### Function Signature
+
+```python
+extract_query(
+    device_id: str,
+    stabilize_time: int = 30,
+    timeout: Optional[int] = None,
+    active_ptz_stops: List[Tuple[float, float, float]] = None
+) -> Dict
+```
+
+**Parameters:**
+- `device_id`: Camera device identifier (e.g., "onvifcam-dev-1")
+- `stabilize_time`: Seconds of stability required before capture (default: 30)
+- `timeout`: Optional timeout in seconds for waiting for stability (None = no timeout)
+- `active_ptz_stops`: Optional list of (pan, tilt, zoom) tuples for active mode
+
+**Returns:**
+Dictionary containing:
+- `camera_frames`: List of captured PIL Images
+- `telemetry`: Dictionary mapping frame index to telemetry data
+- `capture_positions`: List of (pan, tilt, zoom) positions where frames were captured
+- `temp_dir`: Path to temporary directory containing saved frames
+- `manifest_path`: Path to telemetry manifest JSON file
+
 ## Monitoring and Notifications
 
 ### Slack Notifications
@@ -310,11 +373,16 @@ See `monitoring/aws_integration.py` and `monitoring/slack_notifier.py` for more 
 ## Project Structure
 
 ```
-ptz_self_georegistration/
+ptz-calibration-monitoring/
 ├── configs/                  # Configuration files for all executables.
-├── monitoring/               # Monitoring and notification modules.
+├── helpers/                  # Helper modules for camera control and MQTT.
+│   ├── camera_control.py    # ONVIF camera control utilities.
+│   ├── mqtt_helper.py       # MQTT telemetry monitoring (TelemetryLatch).
+│   └── rtsp_helper.py       # RTSP stream capture utilities.
+├── monitoring/               # Calibration monitoring modules.
 │   ├── __init__.py
 │   ├── reference_collector.py  # Reference collection module
+│   ├── query_extractor.py   # Query extraction with MQTT stability detection.
 │   ├── slack_notifier.py    # Slack integration for calibration alerts.
 │   ├── aws_integration.py   # AWS integration module (S3, Athena).
 │   ├── example_usage.py     # Usage examples.
@@ -326,7 +394,9 @@ ptz_self_georegistration/
 │   ├── calculateOrientationOffsets.py
 │   ├── camera_calibration.py
 │   └── collect_references.py  # Reference collection script
+├── port_forward_utils.py    # Kubernetes port forwarding utilities.
 ├── requirements.txt          # List of Python package dependencies.
-├── setup.py                  # Makes the `ptz_georeg` folder installable.
-└── README.md                 # This file.
+├── scan.py                  # Grid-based frame capture script.
+├── setup.py                 # Makes the `ptz_georeg` folder installable.
+└── README.md                # This file.
 ```

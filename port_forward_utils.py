@@ -145,4 +145,3 @@ def get_active_port_forwards() -> int:
     _active_port_forwards = [p for p in _active_port_forwards if p.poll() is None]
     
     return len(_active_port_forwards)
-
