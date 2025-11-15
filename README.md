@@ -80,6 +80,7 @@ All executable scripts are configured using `.ini` files located in the `configs
 -   `configs/camera_calibration.ini`: For calibrating camera intrinsics.
 -   `configs/calibration.ini`: For calibrating the `R_align` matrix.
 -   `configs/orientation_offsets.ini`: For calculating offsets of query images.
+-   `configs/calibration_monitoring.ini`: For calibration monitoring deployment settings.
 
 ## Workflow and Usage
 
@@ -474,11 +475,354 @@ python scripts/test_orchestration.py
 
 This runs unit tests with mocked components to verify the orchestration logic without requiring actual hardware or AWS credentials.
 
+## Deployment Configuration
+
+Before deploying the calibration monitoring system for production use, you need to configure various settings in `configs/calibration_monitoring.ini`.
+
+### Configuration File Setup
+
+Edit `configs/calibration_monitoring.ini` and configure the following sections:
+
+#### AWS Settings
+
+```ini
+[aws]
+region = us-east-1
+s3_bucket = camera-calibration-monitoring
+athena_database = camera_calibration_monitoring
+athena_table = calibration_results
+athena_output_location = s3://camera-calibration-monitoring/athena-results/
+```
+
+**Setup Steps:**
+1. Create an S3 bucket for calibration data storage
+2. Ensure AWS credentials are configured (`~/.aws/credentials` or environment variables)
+3. Create the Athena table (one-time setup):
+   ```bash
+   python monitoring/create_athena_table.py
+   ```
+
+#### Slack Settings
+
+```ini
+[slack]
+webhook_url = 
+access_token = 
+channel = calibration-monitoring
+alert_threshold = 0.5
+```
+
+**Setup Steps:**
+
+**Option 1: OAuth Token (Recommended)**
+1. Go to https://api.slack.com/apps
+2. Create a new app or select an existing one
+3. Navigate to "OAuth & Permissions"
+4. Add the `chat:write` scope
+5. Install the app to your workspace
+6. Copy the "Bot User OAuth Token" (starts with `xoxb-`)
+7. Set environment variable:
+   ```bash
+   export SLACK_ACCESS_TOKEN="xoxb-your-token-here"
+   ```
+   Or add it to the config file's `access_token` field
+
+**Option 2: Webhook URL**
+1. Go to https://api.slack.com/messaging/webhooks
+2. Create a webhook for your channel
+3. Copy the webhook URL
+4. Set environment variable:
+   ```bash
+   export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+   ```
+   Or add it to the config file's `webhook_url` field
+
+**Note:** You only need to configure ONE authentication method (OAuth token OR webhook URL).
+
+#### Monitoring Settings
+
+```ini
+[monitoring]
+default_stabilize_time = 30
+default_timeout = 
+active_ptz_stops = 
+```
+
+- `default_stabilize_time`: How long the camera must remain stable (no movement) before capturing a frame in passive mode
+- `default_timeout`: Maximum time to wait for camera stability (leave empty for no timeout)
+- `active_ptz_stops`: Comma-separated PTZ positions for active mode, e.g., `(0,0,0.0),(45,-10,0.5)`
+
+#### Camera Settings
+
+```ini
+[camera]
+intrinsics_path = camera_intrinsics/calibration.npz
+r_align_path = r_align/10NOV2025_REF1_HOMOGRAPHY.npy
+```
+
+Point these to your camera's calibration files generated in Steps 1 and 2 of the workflow.
+
+#### Device Settings
+
+```ini
+[devices]
+devices_yaml = devices.yaml
+```
+
+Ensure your `devices.yaml` file is properly configured with all deployment clusters and cameras.
+
+### Scheduling Options
+
+The calibration monitoring script can be scheduled to run automatically using various methods:
+
+#### Option 1: Cron Job (Linux/macOS)
+
+Add an entry to your crontab to run monitoring at regular intervals:
+
+```bash
+# Edit crontab
+crontab -e
+```
+
+**Example schedules:**
+
+```bash
+# Run every hour at minute 0
+0 * * * * cd /path/to/ptz-calibration-monitoring && /path/to/.venv/bin/python scripts/run_calibration_monitoring.py >> /var/log/calibration_monitoring.log 2>&1
+
+# Run every 6 hours
+0 */6 * * * cd /path/to/ptz-calibration-monitoring && /path/to/.venv/bin/python scripts/run_calibration_monitoring.py >> /var/log/calibration_monitoring.log 2>&1
+
+# Run daily at 2 AM
+0 2 * * * cd /path/to/ptz-calibration-monitoring && /path/to/.venv/bin/python scripts/run_calibration_monitoring.py >> /var/log/calibration_monitoring.log 2>&1
+```
+
+**Tips:**
+- Use absolute paths for both the project directory and Python interpreter
+- Redirect output to a log file for debugging
+- Ensure the cron user has access to AWS credentials and kubectl contexts
+
+#### Option 2: Systemd Timer (Linux)
+
+Create a systemd service and timer for more robust scheduling:
+
+**1. Create service file** `/etc/systemd/system/calibration-monitoring.service`:
+
+```ini
+[Unit]
+Description=PTZ Camera Calibration Monitoring
+After=network.target
+
+[Service]
+Type=oneshot
+User=youruser
+WorkingDirectory=/path/to/ptz-calibration-monitoring
+Environment="PATH=/path/to/.venv/bin:/usr/bin"
+ExecStart=/path/to/.venv/bin/python scripts/run_calibration_monitoring.py
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**2. Create timer file** `/etc/systemd/system/calibration-monitoring.timer`:
+
+```ini
+[Unit]
+Description=Run PTZ Calibration Monitoring Hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+**3. Enable and start the timer:**
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable calibration-monitoring.timer
+sudo systemctl start calibration-monitoring.timer
+
+# Check timer status
+sudo systemctl list-timers calibration-monitoring.timer
+
+# View logs
+sudo journalctl -u calibration-monitoring.service -f
+```
+
+#### Option 3: Kubernetes CronJob
+
+Deploy the monitoring system as a Kubernetes CronJob for containerized environments:
+
+**1. Create a Docker image** (example Dockerfile):
+
+```dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Install package
+RUN pip install -e .
+
+# Run the monitoring script
+CMD ["python", "scripts/run_calibration_monitoring.py"]
+```
+
+**2. Create CronJob manifest** `k8s-calibration-cronjob.yaml`:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ptz-calibration-monitoring
+  namespace: monitoring
+spec:
+  schedule: "0 * * * *"  # Every hour
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: calibration-monitor
+            image: your-registry/ptz-calibration-monitoring:latest
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-access-key
+            - name: SLACK_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: slack-credentials
+                  key: access-token
+            volumeMounts:
+            - name: kubeconfig
+              mountPath: /root/.kube
+              readOnly: true
+          volumes:
+          - name: kubeconfig
+            secret:
+              secretName: kubeconfig
+          restartPolicy: OnFailure
+```
+
+**3. Deploy to Kubernetes:**
+
+```bash
+kubectl apply -f k8s-calibration-cronjob.yaml
+```
+
+#### Option 4: Cloud Scheduler (AWS EventBridge, GCP Cloud Scheduler)
+
+For serverless deployment, use cloud-native scheduling services to trigger the monitoring script:
+
+**AWS Example (EventBridge + Lambda):**
+1. Package the application as a Lambda layer or container
+2. Create an EventBridge rule with a schedule expression
+3. Configure the Lambda to execute the monitoring script
+4. Ensure Lambda has appropriate IAM roles for S3, Athena, and network access
+
+### Troubleshooting
+
+#### Common Issues
+
+**Problem:** Script fails with "No AWS credentials found"
+
+**Solution:**
+- Ensure `~/.aws/credentials` is configured with valid credentials
+- Or set environment variables:
+  ```bash
+  export AWS_ACCESS_KEY_ID="your-key-id"
+  export AWS_SECRET_ACCESS_KEY="your-secret-key"
+  ```
+
+**Problem:** Kubectl context switch fails
+
+**Solution:**
+- Verify kubectl contexts are configured: `kubectl config get-contexts`
+- Ensure context names match deployment names in `devices.yaml`
+- Check kubectl configuration file: `~/.kube/config`
+
+**Problem:** Camera connection timeout
+
+**Solution:**
+- Verify network connectivity to camera (try port-forwarding manually)
+- Increase `default_timeout` in config file
+- Check camera is powered on and accessible
+- Review logs for specific connection errors
+
+**Problem:** MQTT telemetry not received
+
+**Solution:**
+- Verify MQTT broker is running in the cluster
+- Check port-forward is established correctly
+- Ensure camera is publishing telemetry messages
+- Check MQTT topic matches expected format
+
+**Problem:** Calibration algorithm produces no results
+
+**Solution:**
+- Verify camera intrinsics and R_align files exist and are valid
+- Ensure reference scan exists in S3 for the device
+- Check query images are properly captured and not corrupted
+- Review calibration algorithm logs for feature matching issues
+
+**Problem:** Slack notifications not sending
+
+**Solution:**
+- Verify `SLACK_ACCESS_TOKEN` or `SLACK_WEBHOOK_URL` is set
+- Check channel name is correct (without # prefix)
+- Ensure Slack app has `chat:write` permission
+- Test manually with `python test_slack.py`
+
+**Problem:** Athena query failures
+
+**Solution:**
+- Verify Athena database and table exist
+- Run table creation script: `python monitoring/create_athena_table.py`
+- Check S3 bucket permissions
+- Ensure `athena_output_location` S3 path is writable
+
+#### Debugging Tips
+
+1. **Enable verbose logging:** Set logging level to DEBUG in the script
+2. **Test individual components:**
+   - Query extraction: `monitoring/example_usage.py`
+   - Slack notifications: `python test_slack.py`
+   - AWS integration: `python monitoring/test_aws_integration.py`
+3. **Check AWS CloudWatch logs** for Lambda/container execution logs
+4. **Review systemd journal:** `journalctl -u calibration-monitoring.service -n 100`
+5. **Test cron job manually:** Run the command from crontab directly in your shell
+
 ## Project Structure
 
 ```
 ptz-calibration-monitoring/
 ├── configs/                  # Configuration files for all executables.
+│   ├── camera_calibration.ini        # Camera intrinsics calibration config
+│   ├── calibration.ini               # R_align calibration config
+│   ├── orientation_offsets.ini       # Orientation offsets calculation config
+│   └── calibration_monitoring.ini    # Monitoring deployment configuration
 ├── helpers/                  # Helper modules for camera control and MQTT.
 │   ├── camera_control.py    # ONVIF camera control utilities.
 │   ├── mqtt_helper.py       # MQTT telemetry monitoring (TelemetryLatch).
@@ -487,8 +831,10 @@ ptz-calibration-monitoring/
 │   ├── __init__.py
 │   ├── reference_collector.py  # Reference collection module
 │   ├── query_extractor.py   # Query extraction with MQTT stability detection.
+│   ├── calibration_runner.py # Calibration algorithm runner
 │   ├── slack_notifier.py    # Slack integration for calibration alerts.
 │   ├── aws_integration.py   # AWS integration module (S3, Athena).
+│   ├── create_athena_table.py  # Athena table creation utility
 │   ├── example_usage.py     # Usage examples.
 │   ├── README.md            # Monitoring module documentation.
 │   └── SLACK_SETUP.md       # Slack setup guide.
@@ -500,6 +846,7 @@ ptz-calibration-monitoring/
 │   ├── calculateOrientationOffsets.py
 │   ├── camera_calibration.py
 │   └── collect_references.py  # Reference collection script
+├── devices.yaml             # Device and camera configuration
 ├── port_forward_utils.py    # Kubernetes port forwarding utilities.
 ├── requirements.txt          # List of Python package dependencies.
 ├── scan.py                  # Grid-based frame capture script.
