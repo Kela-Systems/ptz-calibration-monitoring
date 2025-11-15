@@ -5,7 +5,7 @@ Run this script to test the Slack notification functionality.
 
 Setup (OAuth Token - Recommended):
     export SLACK_ACCESS_TOKEN="xoxb-your-token-here"
-    export SLACK_CHANNEL="calibration_monitoring"  # Optional
+    export SLACK_CHANNEL="calibration-monitoring"  # Optional
     python monitoring/example_usage.py
 
 Alternative Setup (Webhook):
@@ -13,13 +13,13 @@ Alternative Setup (Webhook):
     python monitoring/example_usage.py
 """
 
-from slack_notifier import SlackNotifier
+from monitoring.slack_notifier import SlackNotifier
 
 
 def main():
     """Run example notifications."""
     
-    # Initialize notifier (reads SLACK_WEBHOOK_URL from environment)
+    # Initialize notifier (reads SLACK_ACCESS_TOKEN or SLACK_WEBHOOK_URL from environment)
     notifier = SlackNotifier()
     
     print("=" * 70)
@@ -97,7 +97,6 @@ def main():
     print("\nTesting send_test_message() convenience method...")
     test_result = notifier.send_test_message()
     print(f"  Result: {'✅ Sent successfully' if test_result else '❌ Failed to send'}")
-    
 
 if __name__ == "__main__":
     main()
