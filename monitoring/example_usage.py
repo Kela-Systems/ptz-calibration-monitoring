@@ -1,112 +1,102 @@
 """
-Example usage of the AWS Integration module for PTZ camera calibration monitoring.
+Example usage of the SlackNotifier for calibration monitoring.
 
-This script demonstrates how to:
-1. Initialize the AWS integration
-2. Upload reference and query scans
-3. Write calibration results to Athena
-4. Query calibration results
+Run this script to test the Slack notification functionality.
+
+Setup (OAuth Token - Recommended):
+    export SLACK_ACCESS_TOKEN="xoxb-your-token-here"
+    export SLACK_CHANNEL="calibration-monitoring"  # Optional
+    python monitoring/example_usage.py
+
+Alternative Setup (Webhook):
+    export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    python monitoring/example_usage.py
 """
 
-from datetime import datetime
-from aws_integration import (
-    AWSIntegration,
-    upload_reference_scan,
-    upload_query_scan
-)
+from monitoring.slack_notifier import SlackNotifier
+
 
 def main():
-    # Initialize AWS integration (uses default credentials from environment/config)
-    aws = AWSIntegration(region_name="us-east-1")
+    """Run example notifications."""
     
-    # Example 1: Create the Athena table (only needs to be done once)
-    print("Creating Athena table...")
-    aws.create_table()
+    # Initialize notifier (reads SLACK_ACCESS_TOKEN or SLACK_WEBHOOK_URL from environment)
+    notifier = SlackNotifier()
     
-    # Example 2: Upload a reference scan
-    print("\nUploading reference scan...")
-    image_uris, feature_uris = upload_reference_scan(
-        aws,
-        deployment_name="test-deployment",
-        camera_name="camera-01",
-        images_dir="/path/to/reference/images",
-        features_dir="/path/to/reference/features"
-    )
-    print(f"Uploaded {len(image_uris)} images and {len(feature_uris)} features")
+    print("=" * 70)
+    print("Slack Notifier - Example Usage")
+    print("=" * 70)
+    print()
     
-    # Example 3: Upload a query scan
-    print("\nUploading query scan...")
-    timestamp_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    query_image_uris, query_feature_uris = upload_query_scan(
-        aws,
-        deployment_name="test-deployment",
-        camera_name="camera-01",
-        timestamp=timestamp_str,
-        images_dir="/path/to/query/images",
-        features_dir="/path/to/query/features"
-    )
-    print(f"Uploaded {len(query_image_uris)} images and {len(query_feature_uris)} features")
-    
-    # Example 4: Write a calibration result to Athena
-    print("\nWriting calibration result...")
-    capture_positions = [
-        {"pan": 0.0, "tilt": 0.0, "zoom": 1.0},
-        {"pan": 90.0, "tilt": 0.0, "zoom": 1.0},
-        {"pan": 180.0, "tilt": 0.0, "zoom": 1.0},
-    ]
-    
-    files_location = aws.get_s3_path(
-        "test-deployment",
-        "camera-01",
-        "query_scan",
-        "images",
-        timestamp=timestamp_str
-    )
-    
-    query_id = aws.write_calibration_result(
-        deployment_name="test-deployment",
-        device_id="camera-01",
-        timestamp=datetime.now(),
-        pitch_offset=0.5,
-        yaw_offset=-0.3,
-        roll_offset=0.1,
+    # Example 1: Success case with low offsets (✅ emoji)
+    print("Example 1: Sending success report with low offsets...")
+    success_1 = notifier.send_calibration_report(
+        deployment="gan-shomron-dell",
+        device_id="onvifcam-1",
+        pitch=0.2,
+        yaw=0.3,
+        roll=0.1,
         mode="passive",
-        capture_positions=capture_positions,
-        files_location=files_location,
+        success=True
+    )
+    print(f"  Result: {'✅ Sent successfully' if success_1 else '❌ Failed to send'}")
+    print()
+    
+    # Example 2: Alert case with high offsets (🚨 emoji)
+    print("Example 2: Sending alert report with high offsets...")
+    success_2 = notifier.send_calibration_report(
+        deployment="gan-shomron-dell",
+        device_id="onvifcam-2",
+        pitch=0.8,  # Exceeds 0.5° threshold
+        yaw=0.6,    # Exceeds 0.5° threshold
+        roll=0.2,
+        mode="active",
+        success=True
+    )
+    print(f"  Result: {'✅ Sent successfully' if success_2 else '❌ Failed to send'}")
+    print()
+    
+    # Example 3: Failure case with logs
+    print("Example 3: Sending failure report with error logs...")
+    success_3 = notifier.send_calibration_report(
+        deployment="gan-shomron-dell",
+        device_id="onvifcam-3",
+        pitch=1.5,
+        yaw=2.0,
+        roll=0.9,
+        mode="passive",
+        success=False,
+        failure_logs=[
+            "Failed to detect features in reference image",
+            "Insufficient matching points (found 12, need 50)",
+            "Camera may need recalibration"
+        ]
+    )
+    print(f"  Result: {'✅ Sent successfully' if success_3 else '❌ Failed to send'}")
+    print()
+    
+    # Example 4: Using custom timestamp
+    print("Example 4: Sending report with custom timestamp...")
+    success_4 = notifier.send_calibration_report(
+        deployment="test-site-alpha",
+        device_id="ptz-camera-04",
+        pitch=0.15,
+        yaw=0.25,
+        roll=0.05,
+        mode="active",
         success=True,
-        failure_log=""
+        timestamp="2025-11-15T14:30:00Z"
     )
-    print(f"Calibration result written with query ID: {query_id}")
+    print(f"  Result: {'✅ Sent successfully' if success_4 else '❌ Failed to send'}")
+    print()
     
-    # Example 5: Query calibration results
-    print("\nQuerying calibration results...")
-    results = aws.query_calibration_results(
-        deployment_name="test-deployment",
-        device_id="camera-01",
-        success_only=True,
-        limit=10
-    )
-    print(f"Found {len(results)} calibration results")
-    for result in results:
-        print(f"  - {result.get('timestamp')}: "
-              f"pitch={result.get('pitch_offset')}, "
-              f"yaw={result.get('yaw_offset')}, "
-              f"roll={result.get('roll_offset')}")
+    print("=" * 70)
+    print(f"Summary: {sum([success_1, success_2, success_3, success_4])}/4 messages sent")
+    print("=" * 70)
     
-    # Example 6: Get latest calibration for a device
-    print("\nGetting latest calibration...")
-    latest = aws.get_latest_calibration(
-        deployment_name="test-deployment",
-        device_id="camera-01"
-    )
-    if latest:
-        print(f"Latest calibration: {latest.get('timestamp')}")
-        print(f"  Success: {latest.get('success')}")
-        print(f"  Offsets: pitch={latest.get('pitch_offset')}, "
-              f"yaw={latest.get('yaw_offset')}, roll={latest.get('roll_offset')}")
-    else:
-        print("No calibration results found")
-
+    # Test the convenience method
+    print("\nTesting send_test_message() convenience method...")
+    test_result = notifier.send_test_message()
+    print(f"  Result: {'✅ Sent successfully' if test_result else '❌ Failed to send'}")
 
 if __name__ == "__main__":
     main()
